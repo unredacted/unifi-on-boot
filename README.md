@@ -172,7 +172,7 @@ Install: `ansible-galaxy install -r requirements.yml`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `unifi_on_boot_version` | `"1.0.7"` | Version to install from GitHub releases (update to latest) |
+| `unifi_on_boot_version` | `"1.0.8"` | Version to install from GitHub releases (update to latest) |
 | `unifi_on_boot_remove_conflicts` | `true` | Remove `udm-boot`/`udm-boot-2x` if present |
 | `unifi_on_boot_scripts` | `[]` | List of scripts to deploy (see example above) |
 | `unifi_on_boot_run_after_deploy` | `false` | Run on-boot scripts immediately after deploy |

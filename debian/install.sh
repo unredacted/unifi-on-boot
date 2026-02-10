@@ -47,6 +47,24 @@ log "Restoring from: ${DEB}"
 # not during interactive SSH sessions, so Tailscale restarts won't disrupt anything.
 if dpkg -i "${DEB}"; then
     log "Package restored successfully"
+
+    # Wait for actual network connectivity before starting the main service.
+    # network-online.target may be reached before DNS/routing are fully ready,
+    # especially after firmware upgrades. Scripts in on_boot.d need internet
+    # access to download packages, add repo keys, etc.
+    log "Waiting for network connectivity..."
+    for i in $(seq 1 30); do
+        if ping -c 1 -W 3 1.1.1.1 >/dev/null 2>&1 || \
+           ping -c 1 -W 3 8.8.8.8 >/dev/null 2>&1; then
+            log "Network is ready (attempt ${i})"
+            break
+        fi
+        if [ "$i" -eq 30 ]; then
+            log "WARNING: Network not ready after 60s, starting service anyway"
+        fi
+        sleep 2
+    done
+
     # Start the main service so on_boot.d scripts run on this boot
     if systemctl start "${PACKAGE_NAME}.service" 2>/dev/null; then
         log "Service started — on_boot.d scripts executed"
