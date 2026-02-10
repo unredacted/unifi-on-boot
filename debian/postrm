@@ -1,0 +1,57 @@
+#!/bin/bash
+# postrm script for unifi-on-boot
+
+set -e
+
+PACKAGE_NAME="unifi-on-boot"
+
+# Detect distro for persistent dpkg paths
+get_distro() {
+    if [ -f /etc/os-release ]; then
+        grep '^VERSION=' /etc/os-release | sed 's/[^(]*(\(.*\)[^\)]*).*/\1/' 2>/dev/null || echo "bullseye"
+    else
+        echo "bullseye"
+    fi
+}
+
+case "$1" in
+    purge)
+        # Remove from ubnt-dpkg-cache
+        local_config="/etc/default/ubnt-dpkg-cache"
+        if [ -f "$local_config" ]; then
+            sed -i "s/ ${PACKAGE_NAME}//" "$local_config" 2>/dev/null || true
+        fi
+
+        # Remove from ubnt-dpkg-support
+        local_support="/etc/default/ubnt-dpkg-support"
+        if [ -f "$local_support" ]; then
+            sed -i "/^${PACKAGE_NAME}$/d" "$local_support" 2>/dev/null || true
+        fi
+
+        # Remove saved systemd status
+        local distro
+        distro="$(get_distro)"
+        rm -f "/persistent/dpkg/${distro}/status/${PACKAGE_NAME}" 2>/dev/null || true
+
+        # Remove cached action
+        rm -f "/persistent/dpkg/${distro}/actions/${PACKAGE_NAME}" 2>/dev/null || true
+
+        # Clean up log file
+        rm -f /var/log/unifi-on-boot.log 2>/dev/null || true
+
+        systemctl daemon-reload 2>/dev/null || true
+
+        echo "${PACKAGE_NAME}: purged all persistent data"
+        ;;
+
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        systemctl daemon-reload 2>/dev/null || true
+        ;;
+
+    *)
+        echo "postrm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

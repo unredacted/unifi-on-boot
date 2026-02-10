@@ -1,0 +1,101 @@
+#!/bin/bash
+# postinst script for unifi-on-boot
+# This is the critical piece that makes the package firmware-upgrade-proof.
+# On every install (including re-install by ubnt-dpkg-restore after firmware
+# upgrade), this script:
+# 1. Enables and starts the systemd service
+# 2. Registers with ubnt-dpkg-cache for package caching
+# 3. Registers with ubnt-dpkg-support for restore inclusion
+# 4. Saves systemd status for restore_pkg_status()
+
+set -e
+
+PACKAGE_NAME="unifi-on-boot"
+SERVICE_NAME="${PACKAGE_NAME}.service"
+
+# Detect distro for persistent dpkg paths
+get_distro() {
+    if [ -f /etc/os-release ]; then
+        grep '^VERSION=' /etc/os-release | sed 's/[^(]*(\(.*\)[^\)]*).*/\1/' 2>/dev/null || echo "bullseye"
+    else
+        echo "bullseye"
+    fi
+}
+
+# Add package to DPKG_CACHE_UBNT_PKGS in /etc/default/ubnt-dpkg-cache
+register_dpkg_cache() {
+    local config="/etc/default/ubnt-dpkg-cache"
+    [ -f "$config" ] || return 0
+
+    if ! grep -q "${PACKAGE_NAME}" "$config" 2>/dev/null; then
+        # Append our package to the DPKG_CACHE_UBNT_PKGS line
+        if grep -q '^DPKG_CACHE_UBNT_PKGS=' "$config"; then
+            sed -i "s/^DPKG_CACHE_UBNT_PKGS=\"\(.*\)\"/DPKG_CACHE_UBNT_PKGS=\"\1 ${PACKAGE_NAME}\"/" "$config"
+            echo "${PACKAGE_NAME}: registered with ubnt-dpkg-cache"
+        fi
+    fi
+}
+
+# Add package to /etc/default/ubnt-dpkg-support
+register_dpkg_support() {
+    local config="/etc/default/ubnt-dpkg-support"
+
+    # Create the file if it doesn't exist (some firmware versions may not have it)
+    if [ ! -f "$config" ]; then
+        echo "${PACKAGE_NAME}" > "$config"
+        echo "${PACKAGE_NAME}: created ubnt-dpkg-support with our entry"
+        return 0
+    fi
+
+    if ! grep -qx "${PACKAGE_NAME}" "$config" 2>/dev/null; then
+        echo "${PACKAGE_NAME}" >> "$config"
+        echo "${PACKAGE_NAME}: registered with ubnt-dpkg-support"
+    fi
+}
+
+# Save systemd enable status so restore_pkg_status() can re-enable after restore
+save_systemd_status() {
+    local distro
+    distro="$(get_distro)"
+    local status_dir="/persistent/dpkg/${distro}/status"
+
+    if [ -d "/persistent/dpkg/${distro}" ]; then
+        mkdir -p "$status_dir"
+        # Format matches what restore_pkg_status() expects:
+        # Line 1: systemctl action (enable/disable)
+        # Line 2: version (optional)
+        echo "enable" > "${status_dir}/${PACKAGE_NAME}"
+        local version
+        version=$(dpkg-query -W -f='${Version}' "${PACKAGE_NAME}" 2>/dev/null || echo "1.0.0")
+        echo "$version" >> "${status_dir}/${PACKAGE_NAME}"
+        echo "${PACKAGE_NAME}: saved systemd status to ${status_dir}"
+    fi
+}
+
+case "$1" in
+    configure)
+        # Enable and start the service
+        systemctl daemon-reload
+        systemctl enable "${SERVICE_NAME}" 2>/dev/null || true
+        systemctl start "${SERVICE_NAME}" 2>/dev/null || true
+        echo "${PACKAGE_NAME}: service enabled and started"
+
+        # Register for firmware upgrade persistence
+        register_dpkg_cache
+        register_dpkg_support
+        save_systemd_status
+
+        # Ensure on_boot.d directory exists
+        mkdir -p /data/on_boot.d
+        ;;
+
+    abort-upgrade|abort-remove|abort-deconfigure)
+        ;;
+
+    *)
+        echo "postinst called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

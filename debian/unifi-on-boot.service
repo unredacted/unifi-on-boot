@@ -1,0 +1,16 @@
+[Unit]
+Description=Run On-Boot Scripts (/data/on_boot.d)
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=500
+StartLimitBurst=3
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/unifi-on-boot
+RemainAfterExit=yes
+StandardOutput=journal+console
+StandardError=journal+console
+
+[Install]
+WantedBy=multi-user.target

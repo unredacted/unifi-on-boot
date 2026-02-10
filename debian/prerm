@@ -1,0 +1,26 @@
+#!/bin/bash
+# prerm script for unifi-on-boot
+
+set -e
+
+PACKAGE_NAME="unifi-on-boot"
+SERVICE_NAME="${PACKAGE_NAME}.service"
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        # Stop and disable the service
+        systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
+        systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
+        echo "${PACKAGE_NAME}: service stopped and disabled"
+        ;;
+
+    failed-upgrade)
+        ;;
+
+    *)
+        echo "prerm called with unknown argument '$1'" >&2
+        exit 1
+        ;;
+esac
+
+exit 0

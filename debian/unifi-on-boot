@@ -1,0 +1,69 @@
+#!/bin/bash
+# unifi-on-boot: Generic on-boot script runner for UniFi devices
+# Executes scripts from /data/on_boot.d/ in sorted order
+# https://github.com/unredacted/unifi-on-boot
+
+set -euo pipefail
+
+BOOT_DIR="/data/on_boot.d"
+LOG_FILE="/var/log/unifi-on-boot.log"
+SERVICE_NAME="unifi-on-boot"
+
+log() {
+    local msg="[$(date '+%Y-%m-%d %H:%M:%S')] [${SERVICE_NAME}] $1"
+    echo "$msg"
+    echo "$msg" >> "$LOG_FILE"
+}
+
+# Create boot directory if it doesn't exist
+mkdir -p "$BOOT_DIR"
+
+log "Starting on-boot script execution"
+log "Scanning ${BOOT_DIR} for scripts..."
+
+script_count=0
+success_count=0
+fail_count=0
+skip_count=0
+
+while IFS= read -r -d '' entry; do
+    [ -z "$entry" ] && continue
+    filename="$(basename "$entry")"
+
+    if [ -x "$entry" ]; then
+        # Executable file: run it
+        log "Executing: ${filename}"
+        if "$entry"; then
+            log "Success: ${filename}"
+            ((success_count++))
+        else
+            rc=$?
+            log "Failed: ${filename} (exit code: ${rc})"
+            ((fail_count++))
+        fi
+        ((script_count++))
+    elif [[ "$entry" == *.sh ]]; then
+        # Non-executable .sh file: source it
+        log "Sourcing: ${filename}"
+        if (source "$entry"); then
+            log "Success: ${filename}"
+            ((success_count++))
+        else
+            rc=$?
+            log "Failed: ${filename} (exit code: ${rc})"
+            ((fail_count++))
+        fi
+        ((script_count++))
+    else
+        log "Ignoring: ${filename} (not executable and not .sh)"
+        ((skip_count++))
+    fi
+done < <(find -L "$BOOT_DIR" -mindepth 1 -maxdepth 1 -type f -print0 | sort -z)
+
+log "Completed: ${script_count} scripts processed (${success_count} succeeded, ${fail_count} failed, ${skip_count} skipped)"
+
+if [ "$fail_count" -gt 0 ]; then
+    log "WARNING: ${fail_count} script(s) failed. Check log for details."
+fi
+
+exit 0

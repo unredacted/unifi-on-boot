@@ -1,0 +1,12 @@
+Package: unifi-on-boot
+Version: 1.0.0
+Architecture: all
+Maintainer: Unredacted <contact@unredacted.org>
+Depends: bash, systemd
+Conflicts: udm-boot, udm-boot-2x
+Homepage: https://github.com/unredacted/unifi-on-boot
+Description: Run scripts on boot on UniFi devices (firmware-upgrade-proof)
+ A generic on-boot script runner for UniFi devices that executes scripts from
+ /data/on_boot.d/ on every boot. Unlike udm-boot, this package properly
+ integrates with Ubiquiti's ubnt-dpkg-cache/ubnt-dpkg-restore mechanism to
+ survive firmware upgrades without manual intervention.
