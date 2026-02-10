@@ -1,0 +1,12 @@
+[Unit]
+Description=Restore unifi-on-boot after firmware upgrade
+After=local-fs.target
+Before=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/data/unifi-on-boot/install.sh
+
+[Install]
+WantedBy=multi-user.target

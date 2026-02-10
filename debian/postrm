@@ -4,6 +4,7 @@
 set -e
 
 PACKAGE_NAME="unifi-on-boot"
+INSTALL_SERVICE_NAME="${PACKAGE_NAME}-install.service"
 
 # Detect distro for persistent dpkg paths
 get_distro() {
@@ -16,24 +17,21 @@ get_distro() {
 
 case "$1" in
     purge)
+        # Remove self-restore mechanism
+        rm -f "/etc/systemd/system/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
+        rm -f "/etc/systemd/system/multi-user.target.wants/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
+        rm -rf "/data/${PACKAGE_NAME}" 2>/dev/null || true
+
         # Remove from ubnt-dpkg-cache
         local_config="/etc/default/ubnt-dpkg-cache"
         if [ -f "$local_config" ]; then
             sed -i "s/ ${PACKAGE_NAME}//" "$local_config" 2>/dev/null || true
         fi
 
-        # Remove from ubnt-dpkg-support
-        local_support="/etc/default/ubnt-dpkg-support"
-        if [ -f "$local_support" ]; then
-            sed -i "/^${PACKAGE_NAME}$/d" "$local_support" 2>/dev/null || true
-        fi
-
-        # Remove saved systemd status
+        # Remove persistent dpkg data
         local distro
         distro="$(get_distro)"
         rm -f "/persistent/dpkg/${distro}/status/${PACKAGE_NAME}" 2>/dev/null || true
-
-        # Remove cached action
         rm -f "/persistent/dpkg/${distro}/actions/${PACKAGE_NAME}" 2>/dev/null || true
 
         # Clean up log file
@@ -41,7 +39,7 @@ case "$1" in
 
         systemctl daemon-reload 2>/dev/null || true
 
-        echo "${PACKAGE_NAME}: purged all persistent data"
+        echo "${PACKAGE_NAME}: purged all persistent data and self-restore mechanism"
         ;;
 
     remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)

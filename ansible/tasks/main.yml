@@ -95,7 +95,6 @@
     backup: true
   loop: "{{ unifi_on_boot_scripts }}"
   when: unifi_on_boot_scripts | length > 0
-  notify: restart unifi-on-boot
 
 # Optionally run the service immediately
 - name: Run unifi-on-boot service
@@ -120,17 +119,16 @@
       changed_when: false
       failed_when: false
 
-    - name: Check dpkg-cache registration
-      ansible.builtin.command: grep -c unifi-on-boot /etc/default/ubnt-dpkg-cache
-      register: dpkg_cache_check
-      changed_when: false
-      failed_when: false
+    - name: Check self-restore symlinks
+      ansible.builtin.stat:
+        path: /etc/systemd/system/unifi-on-boot-install.service
+      register: install_symlink_check
 
-    - name: Check dpkg-support registration
-      ansible.builtin.command: grep -c unifi-on-boot /etc/default/ubnt-dpkg-support
-      register: dpkg_support_check
-      changed_when: false
-      failed_when: false
+    - name: Check self-restore data directory
+      ansible.builtin.find:
+        paths: /data/unifi-on-boot
+        file_type: file
+      register: data_dir_check
 
     - name: List scripts in on_boot.d
       ansible.builtin.find:
@@ -142,8 +140,7 @@
       ansible.builtin.debug:
         msg:
           - "=== unifi-on-boot Deployment Summary ==="
-          - "Service active: {{ service_active.stdout | default('unknown') }}"
           - "Service enabled: {{ service_enabled.stdout | default('unknown') }}"
-          - "Registered in dpkg-cache: {{ 'yes' if dpkg_cache_check.rc == 0 else 'no' }}"
-          - "Registered in dpkg-support: {{ 'yes' if dpkg_support_check.rc == 0 else 'no' }}"
+          - "Self-restore symlink: {{ 'yes' if install_symlink_check.stat.exists else 'MISSING' }}"
+          - "Self-restore files: {{ data_dir_check.files | map(attribute='path') | list }}"
           - "Scripts in on_boot.d: {{ boot_scripts.files | map(attribute='path') | list }}"

@@ -1,8 +1,0 @@
----
-# handlers for unifi-on-boot ansible role
-
-- name: restart unifi-on-boot
-  ansible.builtin.systemd:
-    name: unifi-on-boot
-    state: restarted
-    daemon_reload: true

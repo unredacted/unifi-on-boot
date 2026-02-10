@@ -1,17 +1,17 @@
 #!/bin/bash
 # postinst script for unifi-on-boot
-# This is the critical piece that makes the package firmware-upgrade-proof.
-# On every install (including re-install by ubnt-dpkg-restore after firmware
-# upgrade), this script:
-# 1. Enables and starts the systemd service
-# 2. Registers with ubnt-dpkg-cache for package caching
-# 3. Registers with ubnt-dpkg-support for restore inclusion
+# On every install, this script:
+# 1. Enables the systemd service
+# 2. Sets up self-restore mechanism (Tailscale pattern: files in /data/, symlinks in overlay)
+# 3. Registers with ubnt-dpkg-cache for package caching
 # 4. Saves systemd status for restore_pkg_status()
 
 set -e
 
 PACKAGE_NAME="unifi-on-boot"
 SERVICE_NAME="${PACKAGE_NAME}.service"
+INSTALL_SERVICE_NAME="${PACKAGE_NAME}-install.service"
+DATA_DIR="/data/${PACKAGE_NAME}"
 
 # Detect distro for persistent dpkg paths
 get_distro() {
@@ -28,28 +28,10 @@ register_dpkg_cache() {
     [ -f "$config" ] || return 0
 
     if ! grep -q "${PACKAGE_NAME}" "$config" 2>/dev/null; then
-        # Append our package to the DPKG_CACHE_UBNT_PKGS line
         if grep -q '^DPKG_CACHE_UBNT_PKGS=' "$config"; then
             sed -i "s/^DPKG_CACHE_UBNT_PKGS=\"\(.*\)\"/DPKG_CACHE_UBNT_PKGS=\"\1 ${PACKAGE_NAME}\"/" "$config"
             echo "${PACKAGE_NAME}: registered with ubnt-dpkg-cache"
         fi
-    fi
-}
-
-# Add package to /etc/default/ubnt-dpkg-support
-register_dpkg_support() {
-    local config="/etc/default/ubnt-dpkg-support"
-
-    # Create the file if it doesn't exist (some firmware versions may not have it)
-    if [ ! -f "$config" ]; then
-        echo "${PACKAGE_NAME}" > "$config"
-        echo "${PACKAGE_NAME}: created ubnt-dpkg-support with our entry"
-        return 0
-    fi
-
-    if ! grep -qx "${PACKAGE_NAME}" "$config" 2>/dev/null; then
-        echo "${PACKAGE_NAME}" >> "$config"
-        echo "${PACKAGE_NAME}: registered with ubnt-dpkg-support"
     fi
 }
 
@@ -61,28 +43,71 @@ save_systemd_status() {
 
     if [ -d "/persistent/dpkg/${distro}" ]; then
         mkdir -p "$status_dir"
-        # Format matches what restore_pkg_status() expects:
-        # Line 1: systemctl action (enable/disable)
-        # Line 2: version (optional)
         echo "enable" > "${status_dir}/${PACKAGE_NAME}"
         local version
-        version=$(dpkg-query -W -f='${Version}' "${PACKAGE_NAME}" 2>/dev/null || echo "1.0.0")
+        version=$(dpkg-query -W -f='${Version}' "${PACKAGE_NAME}" 2>/dev/null || echo "unknown")
         echo "$version" >> "${status_dir}/${PACKAGE_NAME}"
         echo "${PACKAGE_NAME}: saved systemd status to ${status_dir}"
     fi
 }
 
+# Set up self-restore mechanism (Tailscale pattern)
+# Stores install service + script in /data/ (persistent), creates symlinks
+# in /etc/systemd/system/ that survive in the overlay upper dir across
+# firmware upgrades. After firmware upgrade, systemd finds the symlink,
+# runs install.sh, which reinstalls the .deb from cache.
+setup_self_restore() {
+    mkdir -p "${DATA_DIR}"
+
+    # Copy install service and script to persistent storage
+    if [ -f "/usr/share/${PACKAGE_NAME}/${INSTALL_SERVICE_NAME}" ]; then
+        cp "/usr/share/${PACKAGE_NAME}/${INSTALL_SERVICE_NAME}" "${DATA_DIR}/${INSTALL_SERVICE_NAME}"
+        chmod 0644 "${DATA_DIR}/${INSTALL_SERVICE_NAME}"
+    fi
+    if [ -f "/usr/share/${PACKAGE_NAME}/install.sh" ]; then
+        cp "/usr/share/${PACKAGE_NAME}/install.sh" "${DATA_DIR}/install.sh"
+        chmod 0755 "${DATA_DIR}/install.sh"
+    fi
+
+    # Back up the .deb to /data/ for redundancy
+    # (also cached in /persistent/dpkg/ by ubnt-dpkg-cache)
+    local distro
+    distro="$(get_distro)"
+    local cached_deb
+    cached_deb=$(find "/persistent/dpkg/${distro}/packages/" -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
+    if [ -n "${cached_deb}" ] && [ -f "${cached_deb}" ]; then
+        cp "${cached_deb}" "${DATA_DIR}/${PACKAGE_NAME}.deb"
+        echo "${PACKAGE_NAME}: backed up .deb to ${DATA_DIR}"
+    fi
+
+    # Create symlinks in /etc/systemd/system/ (overlay upper dir — survives firmware upgrades)
+    local systemd_dir="/etc/systemd/system"
+    local wants_dir="${systemd_dir}/multi-user.target.wants"
+
+    # Unit file symlink
+    ln -sf "${DATA_DIR}/${INSTALL_SERVICE_NAME}" "${systemd_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
+
+    # Enable symlink
+    mkdir -p "${wants_dir}"
+    ln -sf "${DATA_DIR}/${INSTALL_SERVICE_NAME}" "${wants_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
+
+    systemctl daemon-reload
+    echo "${PACKAGE_NAME}: self-restore mechanism configured"
+}
+
 case "$1" in
     configure)
-        # Enable and start the service
+        # Enable the service (but do NOT start — on-boot scripts should
+        # only run at boot time, not during package install)
         systemctl daemon-reload
         systemctl enable "${SERVICE_NAME}" 2>/dev/null || true
-        systemctl start "${SERVICE_NAME}" 2>/dev/null || true
-        echo "${PACKAGE_NAME}: service enabled and started"
+        echo "${PACKAGE_NAME}: service enabled (will run on next boot)"
 
-        # Register for firmware upgrade persistence
+        # Set up self-restore for firmware upgrade persistence
+        setup_self_restore
+
+        # Register for ubnt-dpkg-cache (belt-and-suspenders)
         register_dpkg_cache
-        register_dpkg_support
         save_systemd_status
 
         # Ensure on_boot.d directory exists

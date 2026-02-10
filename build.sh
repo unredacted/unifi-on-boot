@@ -25,6 +25,7 @@ trap "rm -rf '${BUILD_DIR}'" EXIT
 mkdir -p "${PKG_DIR}/DEBIAN"
 mkdir -p "${PKG_DIR}/lib/systemd/system"
 mkdir -p "${PKG_DIR}/usr/sbin"
+mkdir -p "${PKG_DIR}/usr/share/${PACKAGE_NAME}"
 
 # Copy DEBIAN control files
 cp "${DEBIAN_DIR}/control" "${PKG_DIR}/DEBIAN/control"
@@ -44,6 +45,12 @@ chmod 0644 "${PKG_DIR}/lib/systemd/system/unifi-on-boot.service"
 # Install runner script
 cp "${DEBIAN_DIR}/unifi-on-boot" "${PKG_DIR}/usr/sbin/unifi-on-boot"
 chmod 0755 "${PKG_DIR}/usr/sbin/unifi-on-boot"
+
+# Install self-restore files (postinst copies these to /data/)
+cp "${DEBIAN_DIR}/unifi-on-boot-install.service" "${PKG_DIR}/usr/share/${PACKAGE_NAME}/unifi-on-boot-install.service"
+chmod 0644 "${PKG_DIR}/usr/share/${PACKAGE_NAME}/unifi-on-boot-install.service"
+cp "${DEBIAN_DIR}/install.sh" "${PKG_DIR}/usr/share/${PACKAGE_NAME}/install.sh"
+chmod 0755 "${PKG_DIR}/usr/share/${PACKAGE_NAME}/install.sh"
 
 # Calculate installed size (in KB)
 INSTALLED_SIZE=$(du -sk "${PKG_DIR}" | cut -f1)
