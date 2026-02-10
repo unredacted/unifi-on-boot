@@ -1,5 +1,5 @@
 Package: unifi-on-boot
-Version: 1.0.1
+Version: 1.0.2
 Architecture: all
 Maintainer: Unredacted <contact@unredacted.org>
 Depends: bash, systemd
