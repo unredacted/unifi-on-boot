@@ -41,26 +41,9 @@ jobs:
           chmod +x build.sh
           ./build.sh
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          name: "v${{ steps.version.outputs.version }}"
-          body: |
-            ## unifi-on-boot v${{ steps.version.outputs.version }}
-
-            ### Install
-            ```bash
-            curl -fsSLO https://github.com/unredacted/unifi-on-boot/releases/download/v${{ steps.version.outputs.version }}/unifi-on-boot_${{ steps.version.outputs.version }}_all.deb
-            dpkg -i unifi-on-boot_${{ steps.version.outputs.version }}_all.deb
-            ```
-
-            ### Verify
-            ```bash
-            systemctl status unifi-on-boot
-            ```
           files: dist/*.deb
           generate_release_notes: true
+          fail_on_unmatched_files: true
