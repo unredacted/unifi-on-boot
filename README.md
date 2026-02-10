@@ -1,16 +1,16 @@
 # unifi-on-boot
 
-A firmware-upgrade-proof on-boot script runner for UniFi devices. Executes scripts from `/data/on_boot.d/` on every boot and **survives firmware upgrades** by integrating with Ubiquiti's native `ubnt-dpkg-cache`/`ubnt-dpkg-restore` mechanism.
+A firmware-upgrade-proof on-boot script runner for UniFi devices. Executes scripts from `/data/on_boot.d/` on every boot and **survives firmware upgrades** using a self-restoring overlay symlink mechanism with `ubnt-dpkg-cache` as belt-and-suspenders.
 
 ## Why Not udm-boot?
 
 The popular `udm-boot` / `udm-boot-2x` packages from [unifios-utilities](https://github.com/unifi-utilities/unifios-utilities) break on firmware upgrades because they:
 
 1. Don't register with `ubnt-dpkg-cache` → package isn't cached for restore
-2. Don't register with `ubnt-dpkg-support` → `ubnt-dpkg-restore` ignores it
+2. Have no self-restore mechanism → package is gone after firmware rebuild
 3. Have an empty `postinst` that relies on debhelper magic → service never re-enables
 
-`unifi-on-boot` fixes all three issues with explicit persistence integration.
+`unifi-on-boot` solves this with a self-restoring overlay symlink mechanism that reinstalls itself automatically after firmware upgrades.
 
 ## Compatibility
 
@@ -30,16 +30,17 @@ Tested on: Enterprise Fortress Gateway (EFG)
 
 ```bash
 # Download the latest release
-curl -fsSLO https://github.com/unredacted/unifi-on-boot/releases/latest/download/unifi-on-boot_1.0.0_all.deb
+VERSION=$(curl -fsSL https://api.github.com/repos/unredacted/unifi-on-boot/releases/latest | grep -o '"tag_name": "v[^"]*' | cut -d'v' -f2)
+curl -fsSLO "https://github.com/unredacted/unifi-on-boot/releases/latest/download/unifi-on-boot_${VERSION}_all.deb"
 
 # Install
-dpkg -i unifi-on-boot_1.0.0_all.deb
+dpkg -i unifi-on-boot_${VERSION}_all.deb
 ```
 
 The package automatically:
-- Enables and starts the `unifi-on-boot` systemd service
+- Enables the `unifi-on-boot` systemd service (runs on next boot)
+- Sets up the self-restore mechanism (overlay symlinks + backup `.deb` in `/data/`)
 - Registers itself with `ubnt-dpkg-cache` for package caching
-- Registers itself with `ubnt-dpkg-support` for firmware upgrade restore
 - Saves its systemd status for service re-enablement after restore
 - Creates `/data/on_boot.d/` if it doesn't exist
 
@@ -158,7 +159,7 @@ Install: `ansible-galaxy install -r requirements.yml`
   roles:
     - role: unifi-on-boot
       vars:
-        unifi_on_boot_version: "1.0.0"
+        # unifi_on_boot_version: "1.0.4"  # defaults to latest in role defaults
         unifi_on_boot_scripts:
           - name: "10-setup-pathvector.sh"
             src: "pathvector-setup.sh.j2"
@@ -171,7 +172,7 @@ Install: `ansible-galaxy install -r requirements.yml`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `unifi_on_boot_version` | `"1.0.0"` | Version to install from GitHub releases |
+| `unifi_on_boot_version` | `"1.0.4"` | Version to install from GitHub releases (update to latest) |
 | `unifi_on_boot_remove_conflicts` | `true` | Remove `udm-boot`/`udm-boot-2x` if present |
 | `unifi_on_boot_scripts` | `[]` | List of scripts to deploy (see example above) |
 | `unifi_on_boot_run_after_deploy` | `false` | Run on-boot scripts immediately after deploy |
@@ -189,7 +190,7 @@ The role will:
 # Requires: dpkg-deb (available on Debian/Ubuntu)
 ./build.sh
 
-# Output: dist/unifi-on-boot_1.0.0_all.deb
+# Output: dist/unifi-on-boot_<version>_all.deb
 ```
 
 The build uses `dpkg-deb` directly — no debhelper or other build system dependencies.
@@ -202,12 +203,13 @@ If something goes wrong after a firmware upgrade:
 # Check if the package was restored
 dpkg -l | grep unifi-on-boot
 
-# If not, re-install manually
-dpkg -i /persistent/dpkg/*/packages/unifi-on-boot_*.deb
+# If not, re-install manually from the self-restore backup
+dpkg -i /data/unifi-on-boot/unifi-on-boot.deb
 
-# Or download fresh
-curl -fsSLO https://github.com/unredacted/unifi-on-boot/releases/latest/download/unifi-on-boot_1.0.0_all.deb
-dpkg -i unifi-on-boot_1.0.0_all.deb
+# Or download fresh (same method as initial install)
+VERSION=$(curl -fsSL https://api.github.com/repos/unredacted/unifi-on-boot/releases/latest | grep -o '"tag_name": "v[^"]*' | cut -d'v' -f2)
+curl -fsSLO "https://github.com/unredacted/unifi-on-boot/releases/latest/download/unifi-on-boot_${VERSION}_all.deb"
+dpkg -i unifi-on-boot_${VERSION}_all.deb
 ```
 
 ## Comparison with udm-boot
@@ -215,8 +217,8 @@ dpkg -i unifi-on-boot_1.0.0_all.deb
 | Feature | unifi-on-boot | udm-boot-2x |
 |---------|--------------|-------------|
 | Survives firmware upgrades | ✅ Yes | ❌ No |
+| Self-restore overlay mechanism | ✅ Yes | ❌ No |
 | `ubnt-dpkg-cache` integration | ✅ Yes | ❌ No |
-| `ubnt-dpkg-support` integration | ✅ Yes | ❌ No |
 | Explicit `systemctl enable` in postinst | ✅ Yes | ❌ Relies on debhelper |
 | systemd status persistence | ✅ Yes | ❌ No |
 | Clean uninstall (purge) | ✅ Yes | ⚠️ Partial |
