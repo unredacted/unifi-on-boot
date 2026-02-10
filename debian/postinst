@@ -105,11 +105,15 @@ setup_self_restore() {
     local wants_dir="${systemd_dir}/multi-user.target.wants"
 
     # Copy unit file directly (overlay upper dir — survives firmware upgrades)
+    # IMPORTANT: rm first! cp follows symlinks, so if an old symlink to /data/
+    # exists, cp would write through it instead of replacing with a regular file.
+    rm -f "${systemd_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
     cp "${DATA_DIR}/${INSTALL_SERVICE_NAME}" "${systemd_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
     chmod 0644 "${systemd_dir}/${INSTALL_SERVICE_NAME}"
 
     # Enable: symlink from wants dir to the local copy (NOT to /data/)
     mkdir -p "${wants_dir}"
+    rm -f "${wants_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
     ln -sf "${systemd_dir}/${INSTALL_SERVICE_NAME}" "${wants_dir}/${INSTALL_SERVICE_NAME}" 2>/dev/null || true
 
     systemctl daemon-reload

@@ -2,7 +2,7 @@
 # defaults for unifi-on-boot ansible role
 
 # Version of unifi-on-boot to install
-unifi_on_boot_version: "1.0.5"
+unifi_on_boot_version: "1.0.6"
 
 # GitHub release download URL
 unifi_on_boot_github_repo: "unredacted/unifi-on-boot"
