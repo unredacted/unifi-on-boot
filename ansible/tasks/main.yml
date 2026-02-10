@@ -59,6 +59,23 @@
         state: present
       register: install_result
 
+    - name: Ensure self-restore directory exists
+      ansible.builtin.file:
+        path: /data/unifi-on-boot
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+
+    - name: Copy .deb to /data/unifi-on-boot/ for self-restore
+      ansible.builtin.copy:
+        src: "/tmp/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"
+        dest: "/data/unifi-on-boot/unifi-on-boot.deb"
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0644'
+
     - name: Clean up downloaded .deb
       ansible.builtin.file:
         path: "/tmp/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"

@@ -112,22 +112,28 @@ systemctl restart unifi-on-boot
 
 ## How Firmware Upgrade Persistence Works
 
+UniFi firmware upgrades rebuild the root filesystem, wiping all installed packages and systemd services. Ubiquiti's `ubnt-dpkg-restore` only restores packages listed in `/etc/default/ubnt-dpkg-support`, which resets to firmware defaults on every upgrade — so custom packages are excluded.
+
+`unifi-on-boot` solves this with a **self-restoring mechanism** inspired by how tailscale-udm persists on UniFi devices:
+
 ```
 Firmware Upgrade
-  → Root filesystem rebuilt
-  → ubnt-dpkg-restore runs
-  → Reads /etc/default/ubnt-dpkg-support (has "unifi-on-boot")
-  → Finds .deb in /persistent/dpkg/<distro>/packages/
-  → dpkg -i reinstalls the package
-  → postinst runs: systemctl enable + start
-  → Service starts, runs /data/on_boot.d/* scripts
+  → Root filesystem rebuilt (all packages + services lost)
+  → BUT: overlay upper dir (/mnt/.rwfs/data/) preserved
+  → Symlink survives: /etc/systemd/system/unifi-on-boot-install.service
+    → points to /data/unifi-on-boot/unifi-on-boot-install.service
+  → systemd finds the symlink, runs install.sh from /data/
+  → install.sh checks if package is installed
+    → Not installed: dpkg -i from /data/unifi-on-boot/unifi-on-boot.deb
+    → postinst enables unifi-on-boot.service
+  → On next boot (or later in same boot): runs /data/on_boot.d/* scripts
 ```
 
-The package hooks into three Ubiquiti persistence mechanisms:
+The package sets up three layers of persistence:
 
-1. **`ubnt-dpkg-cache`** — Caches the `.deb` to `/persistent/dpkg/` during install
-2. **`ubnt-dpkg-support`** — Lists the package for restoration after firmware upgrade
-3. **systemd status** — Saves enable/disable state so `restore_pkg_status()` re-enables the service
+1. **Self-restore service** — Stores `install.sh` and a service file in `/data/unifi-on-boot/` (persistent), with symlinks from `/etc/systemd/system/` that survive in the overlay upper dir across firmware upgrades
+2. **Backup `.deb`** — Copies the `.deb` to `/data/unifi-on-boot/` and also lets `ubnt-dpkg-cache` cache it in `/persistent/dpkg/`
+3. **systemd status** — Saves enable/disable state to `/persistent/dpkg/<distro>/status/` so `restore_pkg_status()` can re-enable the service
 
 ## Ansible Role
 

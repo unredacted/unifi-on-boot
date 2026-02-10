@@ -69,15 +69,31 @@ setup_self_restore() {
         chmod 0755 "${DATA_DIR}/install.sh"
     fi
 
-    # Back up the .deb to /data/ for redundancy
-    # (also cached in /persistent/dpkg/ by ubnt-dpkg-cache)
+    # Back up the .deb to /data/ for redundancy (self-restore fallback)
+    # Note: ubnt-dpkg-cache hasn't cached the .deb yet at postinst time
+    # (it hooks at post-invoke, after dpkg finishes), so we check multiple locations.
     local distro
     distro="$(get_distro)"
-    local cached_deb
-    cached_deb=$(find "/persistent/dpkg/${distro}/packages/" -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
-    if [ -n "${cached_deb}" ] && [ -f "${cached_deb}" ]; then
-        cp "${cached_deb}" "${DATA_DIR}/${PACKAGE_NAME}.deb"
-        echo "${PACKAGE_NAME}: backed up .deb to ${DATA_DIR}"
+    local backup_deb=""
+
+    # 1. Check /persistent/dpkg/ cache (populated on subsequent installs)
+    backup_deb=$(find "/persistent/dpkg/${distro}/packages/" -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
+
+    # 2. Check /var/cache/apt/archives/ (populated by apt install)
+    if [ -z "${backup_deb}" ]; then
+        backup_deb=$(find /var/cache/apt/archives/ -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
+    fi
+
+    # 3. Check /tmp/ (where Ansible downloads it)
+    if [ -z "${backup_deb}" ]; then
+        backup_deb=$(find /tmp/ -maxdepth 1 -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
+    fi
+
+    if [ -n "${backup_deb}" ] && [ -f "${backup_deb}" ]; then
+        cp "${backup_deb}" "${DATA_DIR}/${PACKAGE_NAME}.deb"
+        echo "${PACKAGE_NAME}: backed up .deb to ${DATA_DIR} (from ${backup_deb})"
+    else
+        echo "${PACKAGE_NAME}: WARNING: could not find .deb to backup (self-restore may need Ansible re-deploy)"
     fi
 
     # Create symlinks in /etc/systemd/system/ (overlay upper dir — survives firmware upgrades)

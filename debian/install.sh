@@ -40,14 +40,12 @@ fi
 log "Restoring from: ${DEB}"
 
 # Install the package
+# Note: postinst handles systemctl enable + daemon-reload.
+# Do NOT start the service here — it would run all on_boot.d scripts
+# (including Tailscale) which can disrupt network connectivity.
+# The main service starts later in the same boot via WantedBy=multi-user.target.
 if dpkg -i "${DEB}"; then
-    log "Package restored successfully"
-
-    # Reload systemd and start the service
-    systemctl daemon-reload
-    systemctl start "${PACKAGE_NAME}" 2>/dev/null || true
-
-    log "Service started"
+    log "Package restored successfully (service will start later in boot)"
 else
     log "ERROR: Failed to restore package"
     exit 1
