@@ -129,27 +129,53 @@ The package hooks into three Ubiquiti persistence mechanisms:
 2. **`ubnt-dpkg-support`** — Lists the package for restoration after firmware upgrade
 3. **systemd status** — Saves enable/disable state so `restore_pkg_status()` re-enables the service
 
-## Ansible Integration
+## Ansible Role
 
-Example task to deploy `unifi-on-boot` via Ansible:
+This repo includes an Ansible role at `ansible/` for automated deployment.
+
+### Usage
+
+Add the role to your playbook's `requirements.yml`:
 
 ```yaml
-- name: Copy unifi-on-boot package
-  ansible.builtin.copy:
-    src: unifi-on-boot_1.0.0_all.deb
-    dest: /tmp/unifi-on-boot.deb
-
-- name: Install unifi-on-boot
-  ansible.builtin.apt:
-    deb: /tmp/unifi-on-boot.deb
-    state: present
-
-- name: Deploy on-boot script
-  ansible.builtin.template:
-    src: my-boot-script.sh.j2
-    dest: /data/on_boot.d/10-my-boot-script.sh
-    mode: '0755'
+- name: unifi-on-boot
+  src: git+https://github.com/unredacted/unifi-on-boot.git
+  version: main
 ```
+
+Install: `ansible-galaxy install -r requirements.yml`
+
+### Example Playbook
+
+```yaml
+- hosts: unifi_devices
+  roles:
+    - role: unifi-on-boot
+      vars:
+        unifi_on_boot_version: "1.0.0"
+        unifi_on_boot_scripts:
+          - name: "10-setup-pathvector.sh"
+            src: "pathvector-setup.sh.j2"
+            mode: "0755"
+        unifi_on_boot_run_after_deploy: true
+        unifi_on_boot_debug: true
+```
+
+### Role Variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `unifi_on_boot_version` | `"1.0.0"` | Version to install from GitHub releases |
+| `unifi_on_boot_remove_conflicts` | `true` | Remove `udm-boot`/`udm-boot-2x` if present |
+| `unifi_on_boot_scripts` | `[]` | List of scripts to deploy (see example above) |
+| `unifi_on_boot_run_after_deploy` | `false` | Run on-boot scripts immediately after deploy |
+| `unifi_on_boot_debug` | `false` | Show debug output and deployment summary |
+
+The role will:
+1. Remove conflicting `udm-boot` packages (if enabled)
+2. Download and install the `.deb` from GitHub releases
+3. Deploy scripts from templates to `/data/on_boot.d/`
+4. Optionally trigger the on-boot service
 
 ## Building from Source
 

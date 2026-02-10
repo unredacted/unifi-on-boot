@@ -1,0 +1,27 @@
+---
+# defaults for unifi-on-boot ansible role
+
+# Version of unifi-on-boot to install
+unifi_on_boot_version: "1.0.0"
+
+# GitHub release download URL
+unifi_on_boot_github_repo: "unredacted/unifi-on-boot"
+unifi_on_boot_download_url: "https://github.com/{{ unifi_on_boot_github_repo }}/releases/download/v{{ unifi_on_boot_version }}/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"
+
+# Whether to remove conflicting packages (udm-boot, udm-boot-2x)
+unifi_on_boot_remove_conflicts: true
+
+# Scripts to deploy to /data/on_boot.d/
+# List of dicts with 'name', 'src' (template path), and optional 'mode'
+# Example:
+#   unifi_on_boot_scripts:
+#     - name: "10-setup-pathvector.sh"
+#       src: "pathvector-setup.sh.j2"
+#       mode: "0755"
+unifi_on_boot_scripts: []
+
+# Whether to run the on-boot service after deployment
+unifi_on_boot_run_after_deploy: false
+
+# Enable debug output
+unifi_on_boot_debug: false

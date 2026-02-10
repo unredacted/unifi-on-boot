@@ -1,0 +1,149 @@
+---
+# tasks for unifi-on-boot ansible role
+
+- name: Display deployment information
+  ansible.builtin.debug:
+    msg:
+      - "=== Deploying unifi-on-boot ==="
+      - "Version: {{ unifi_on_boot_version }}"
+      - "Download URL: {{ unifi_on_boot_download_url }}"
+  when: unifi_on_boot_debug | bool
+
+# Remove conflicting packages
+- name: Remove udm-boot if installed
+  ansible.builtin.command: dpkg -r {{ item }}
+  loop:
+    - udm-boot
+    - udm-boot-2x
+  register: remove_result
+  changed_when: remove_result.rc == 0
+  failed_when: false
+  when: unifi_on_boot_remove_conflicts | bool
+
+# Check current installed version
+- name: Check if unifi-on-boot is already installed
+  ansible.builtin.command: dpkg-query -W -f='${Version}' unifi-on-boot
+  register: installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Set install needed fact
+  ansible.builtin.set_fact:
+    unifi_on_boot_install_needed: >-
+      {{ installed_version.rc != 0 or
+         installed_version.stdout != unifi_on_boot_version }}
+
+- name: Display current state
+  ansible.builtin.debug:
+    msg:
+      - "Currently installed: {{ installed_version.stdout | default('not installed') }}"
+      - "Target version: {{ unifi_on_boot_version }}"
+      - "Install needed: {{ unifi_on_boot_install_needed }}"
+  when: unifi_on_boot_debug | bool
+
+# Download and install
+- name: Install unifi-on-boot
+  when: unifi_on_boot_install_needed | bool
+  block:
+    - name: Download unifi-on-boot .deb
+      ansible.builtin.get_url:
+        url: "{{ unifi_on_boot_download_url }}"
+        dest: "/tmp/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"
+        mode: '0644'
+        force: true
+      register: download_result
+
+    - name: Install unifi-on-boot .deb
+      ansible.builtin.apt:
+        deb: "/tmp/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"
+        state: present
+      register: install_result
+
+    - name: Clean up downloaded .deb
+      ansible.builtin.file:
+        path: "/tmp/unifi-on-boot_{{ unifi_on_boot_version }}_all.deb"
+        state: absent
+
+    - name: Display install result
+      ansible.builtin.debug:
+        msg: "unifi-on-boot {{ unifi_on_boot_version }} installed successfully"
+      when: unifi_on_boot_debug | bool
+
+# Ensure service is enabled and running
+- name: Ensure unifi-on-boot service is enabled
+  ansible.builtin.systemd:
+    name: unifi-on-boot
+    enabled: true
+    daemon_reload: true
+
+# Deploy scripts to /data/on_boot.d/
+- name: Ensure /data/on_boot.d/ exists
+  ansible.builtin.file:
+    path: /data/on_boot.d
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Deploy on-boot scripts
+  ansible.builtin.template:
+    src: "{{ item.src }}"
+    dest: "/data/on_boot.d/{{ item.name }}"
+    owner: root
+    group: root
+    mode: "{{ item.mode | default('0755') }}"
+    backup: true
+  loop: "{{ unifi_on_boot_scripts }}"
+  when: unifi_on_boot_scripts | length > 0
+  notify: restart unifi-on-boot
+
+# Optionally run the service immediately
+- name: Run unifi-on-boot service
+  ansible.builtin.systemd:
+    name: unifi-on-boot
+    state: restarted
+  when: unifi_on_boot_run_after_deploy | bool
+
+# Verification
+- name: Verify deployment
+  when: unifi_on_boot_debug | bool
+  block:
+    - name: Check service status
+      ansible.builtin.command: systemctl is-active unifi-on-boot
+      register: service_active
+      changed_when: false
+      failed_when: false
+
+    - name: Check service enabled
+      ansible.builtin.command: systemctl is-enabled unifi-on-boot
+      register: service_enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Check dpkg-cache registration
+      ansible.builtin.command: grep -c unifi-on-boot /etc/default/ubnt-dpkg-cache
+      register: dpkg_cache_check
+      changed_when: false
+      failed_when: false
+
+    - name: Check dpkg-support registration
+      ansible.builtin.command: grep -c unifi-on-boot /etc/default/ubnt-dpkg-support
+      register: dpkg_support_check
+      changed_when: false
+      failed_when: false
+
+    - name: List scripts in on_boot.d
+      ansible.builtin.find:
+        paths: /data/on_boot.d
+        file_type: file
+      register: boot_scripts
+
+    - name: Display deployment summary
+      ansible.builtin.debug:
+        msg:
+          - "=== unifi-on-boot Deployment Summary ==="
+          - "Service active: {{ service_active.stdout | default('unknown') }}"
+          - "Service enabled: {{ service_enabled.stdout | default('unknown') }}"
+          - "Registered in dpkg-cache: {{ 'yes' if dpkg_cache_check.rc == 0 else 'no' }}"
+          - "Registered in dpkg-support: {{ 'yes' if dpkg_support_check.rc == 0 else 'no' }}"
+          - "Scripts in on_boot.d: {{ boot_scripts.files | map(attribute='path') | list }}"

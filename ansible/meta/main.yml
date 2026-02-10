@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  author: Unredacted
+  description: Deploy unifi-on-boot on UniFi devices for firmware-upgrade-proof on-boot script execution
+  license: GPL-3.0
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Debian
+      versions:
+        - bullseye
+        - bookworm
+  galaxy_tags:
+    - unifi
+    - networking
+    - boot
+    - ubiquiti
+dependencies: []
