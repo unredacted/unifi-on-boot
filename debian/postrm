@@ -23,16 +23,15 @@ case "$1" in
         rm -rf "/data/${PACKAGE_NAME}" 2>/dev/null || true
 
         # Remove from ubnt-dpkg-cache
-        local_config="/etc/default/ubnt-dpkg-cache"
-        if [ -f "$local_config" ]; then
-            sed -i "s/ ${PACKAGE_NAME}//" "$local_config" 2>/dev/null || true
+        _local_config="/etc/default/ubnt-dpkg-cache"
+        if [ -f "$_local_config" ]; then
+            sed -i "s/ ${PACKAGE_NAME}//" "$_local_config" 2>/dev/null || true
         fi
 
         # Remove persistent dpkg data
-        local distro
-        distro="$(get_distro)"
-        rm -f "/persistent/dpkg/${distro}/status/${PACKAGE_NAME}" 2>/dev/null || true
-        rm -f "/persistent/dpkg/${distro}/actions/${PACKAGE_NAME}" 2>/dev/null || true
+        _distro="$(get_distro)"
+        rm -f "/persistent/dpkg/${_distro}/status/${PACKAGE_NAME}" 2>/dev/null || true
+        rm -f "/persistent/dpkg/${_distro}/actions/${PACKAGE_NAME}" 2>/dev/null || true
 
         # Clean up log file
         rm -f /var/log/unifi-on-boot.log 2>/dev/null || true
