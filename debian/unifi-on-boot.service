@@ -9,8 +9,9 @@ StartLimitBurst=3
 Type=oneshot
 ExecStart=/usr/sbin/unifi-on-boot
 RemainAfterExit=yes
-StandardOutput=journal+console
-StandardError=journal+console
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=10
 
 [Install]
 WantedBy=multi-user.target
