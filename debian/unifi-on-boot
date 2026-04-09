@@ -183,7 +183,13 @@ while IFS= read -r -d '' entry; do
         # Skip data files silently (.yml, .json, .conf, etc.)
         skip_count=$((skip_count + 1))
     fi
-done < <(find -L "$BOOT_DIR" -mindepth 1 -maxdepth 1 -type f -print0 | sort -z)
+done < <(find -L "$BOOT_DIR" -mindepth 1 -maxdepth 1 -type f \
+    ! -name '*~' \
+    ! -name '*.bak' \
+    ! -name '*.orig' \
+    ! -name '*.dpkg-*' \
+    ! -name '.*' \
+    -print0 | sort -z)
 
 log "Completed: ${script_count} scripts processed (${success_count} succeeded, ${fail_count} failed, ${skip_count} skipped)"
 
