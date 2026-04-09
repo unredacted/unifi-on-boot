@@ -135,7 +135,6 @@
     owner: root
     group: root
     mode: "{{ item.mode | default('0755') }}"
-    backup: true
   loop: "{{ unifi_on_boot_scripts }}"
   when: unifi_on_boot_scripts | length > 0
 

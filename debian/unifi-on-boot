@@ -92,7 +92,10 @@ sync_shadow_gateway() {
 
     # Sync /data/on_boot.d/ to shadow (--delete ensures exact mirror)
     log "Syncing /data/on_boot.d/ to shadow gateway..."
-    if timeout "$SYNC_TIMEOUT" rsync -avz --delete -e "ssh $SSH_OPTS" \
+    if timeout "$SYNC_TIMEOUT" rsync -avz --delete --delete-excluded \
+        --exclude='*~' --exclude='*.bak' --exclude='*.orig' \
+        --exclude='*.dpkg-*' --exclude='.*' \
+        -e "ssh $SSH_OPTS" \
         "${BOOT_DIR}/" "${shadow_user}@${shadow_ip}:${BOOT_DIR}/" 2>&1 | tee -a "$LOG_FILE"; then
         log "Successfully synced /data/on_boot.d/ to shadow gateway"
     else
@@ -100,18 +103,26 @@ sync_shadow_gateway() {
         return 1
     fi
 
-    # Ensure unifi-on-boot is installed on shadow
-    if ! timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
-        "dpkg -l unifi-on-boot 2>/dev/null | grep -q '^ii'" 2>/dev/null; then
-        log "Installing unifi-on-boot on shadow gateway..."
+    # Ensure unifi-on-boot on shadow matches primary version
+    local primary_version
+    primary_version=$(dpkg-query -W -f='${Version}' unifi-on-boot 2>/dev/null || echo "unknown")
+
+    local shadow_version
+    shadow_version=$(timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
+        "dpkg-query -W -f='\${Version}' unifi-on-boot 2>/dev/null" 2>/dev/null || echo "not-installed")
+
+    if [ "$primary_version" != "$shadow_version" ]; then
+        log "Shadow version mismatch (primary: ${primary_version}, shadow: ${shadow_version}), upgrading..."
 
         local deb_path="/data/unifi-on-boot/unifi-on-boot.deb"
         if [ -f "$deb_path" ]; then
             if timeout "$SYNC_TIMEOUT" scp $SSH_OPTS \
                 "$deb_path" "${shadow_user}@${shadow_ip}:/tmp/unifi-on-boot.deb" 2>/dev/null && \
                timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
-                "dpkg -i /tmp/unifi-on-boot.deb && rm -f /tmp/unifi-on-boot.deb" 2>&1 | tee -a "$LOG_FILE"; then
-                log "Successfully installed unifi-on-boot on shadow gateway"
+                "dpkg -i /tmp/unifi-on-boot.deb && \
+                 mkdir -p /data/unifi-on-boot && \
+                 mv /tmp/unifi-on-boot.deb /data/unifi-on-boot/unifi-on-boot.deb" 2>&1 | tee -a "$LOG_FILE"; then
+                log "Successfully upgraded unifi-on-boot on shadow gateway to ${primary_version}"
             else
                 log "ERROR: Failed to install unifi-on-boot on shadow gateway"
                 return 1
@@ -119,6 +130,8 @@ sync_shadow_gateway() {
         else
             log "WARNING: No .deb found at ${deb_path}, cannot install unifi-on-boot on shadow"
         fi
+    else
+        log "Shadow version matches primary (${primary_version})"
     fi
 
     # Run unifi-on-boot on shadow with --skip-shadow to prevent recursion

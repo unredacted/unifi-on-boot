@@ -89,6 +89,11 @@ setup_self_restore() {
         backup_deb=$(find /tmp/ -maxdepth 1 -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
     fi
 
+    # 4. Check common manual install locations (/root, /home)
+    if [ -z "${backup_deb}" ]; then
+        backup_deb=$(find /root/ /home/ -maxdepth 2 -name "${PACKAGE_NAME}_*.deb" -type f 2>/dev/null | sort -V | tail -1)
+    fi
+
     if [ -n "${backup_deb}" ] && [ -f "${backup_deb}" ]; then
         cp "${backup_deb}" "${DATA_DIR}/${PACKAGE_NAME}.deb"
         echo "${PACKAGE_NAME}: backed up .deb to ${DATA_DIR} (from ${backup_deb})"
