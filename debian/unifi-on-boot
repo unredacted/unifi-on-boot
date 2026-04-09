@@ -11,6 +11,8 @@ LOG_FILE="/var/log/unifi-on-boot.log"
 SERVICE_NAME="unifi-on-boot"
 SHADOW_CONF="/data/unifi-on-boot/shadow.conf"
 SKIP_SHADOW=false
+SSH_OPTS="-o ConnectTimeout=5 -o StrictHostKeyChecking=no -o BatchMode=yes"
+SYNC_TIMEOUT=120  # hard deadline for each remote operation (seconds)
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -61,6 +63,12 @@ sync_shadow_gateway() {
         return 0
     fi
 
+    # Verify SSH connectivity before committing to a full sync
+    if ! timeout 10 ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" true >/dev/null 2>&1; then
+        log "WARNING: Shadow gateway at ${shadow_ip} is reachable but SSH failed (skipping sync)"
+        return 0
+    fi
+
     log "Shadow gateway detected at ${shadow_ip}, starting sync..."
 
     # Ensure rsync is installed locally
@@ -73,9 +81,9 @@ sync_shadow_gateway() {
     fi
 
     # Ensure rsync is installed on shadow
-    if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${shadow_user}@${shadow_ip}" "command -v rsync" >/dev/null 2>&1; then
+    if ! timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" "command -v rsync" >/dev/null 2>&1; then
         log "Installing rsync on shadow gateway..."
-        if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${shadow_user}@${shadow_ip}" \
+        if ! timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
             "DEBIAN_FRONTEND=noninteractive apt-get update >/dev/null 2>&1 && apt-get install -y rsync >/dev/null 2>&1"; then
             log "ERROR: Failed to install rsync on shadow gateway, cannot sync"
             return 1
@@ -84,7 +92,7 @@ sync_shadow_gateway() {
 
     # Sync /data/on_boot.d/ to shadow (--delete ensures exact mirror)
     log "Syncing /data/on_boot.d/ to shadow gateway..."
-    if rsync -avz --delete -e "ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no" \
+    if timeout "$SYNC_TIMEOUT" rsync -avz --delete -e "ssh $SSH_OPTS" \
         "${BOOT_DIR}/" "${shadow_user}@${shadow_ip}:${BOOT_DIR}/" 2>&1 | tee -a "$LOG_FILE"; then
         log "Successfully synced /data/on_boot.d/ to shadow gateway"
     else
@@ -93,15 +101,15 @@ sync_shadow_gateway() {
     fi
 
     # Ensure unifi-on-boot is installed on shadow
-    if ! ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${shadow_user}@${shadow_ip}" \
+    if ! timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
         "dpkg -l unifi-on-boot 2>/dev/null | grep -q '^ii'" 2>/dev/null; then
         log "Installing unifi-on-boot on shadow gateway..."
 
         local deb_path="/data/unifi-on-boot/unifi-on-boot.deb"
         if [ -f "$deb_path" ]; then
-            if scp -o ConnectTimeout=5 -o StrictHostKeyChecking=no \
+            if timeout "$SYNC_TIMEOUT" scp $SSH_OPTS \
                 "$deb_path" "${shadow_user}@${shadow_ip}:/tmp/unifi-on-boot.deb" 2>/dev/null && \
-               ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${shadow_user}@${shadow_ip}" \
+               timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
                 "dpkg -i /tmp/unifi-on-boot.deb && rm -f /tmp/unifi-on-boot.deb" 2>&1 | tee -a "$LOG_FILE"; then
                 log "Successfully installed unifi-on-boot on shadow gateway"
             else
@@ -116,7 +124,7 @@ sync_shadow_gateway() {
     # Run unifi-on-boot on shadow with --skip-shadow to prevent recursion
     # Note: we invoke the script directly (not via systemctl) so we can pass --skip-shadow
     log "Triggering unifi-on-boot on shadow gateway..."
-    if ssh -o ConnectTimeout=5 -o StrictHostKeyChecking=no "${shadow_user}@${shadow_ip}" \
+    if timeout "$SYNC_TIMEOUT" ssh $SSH_OPTS "${shadow_user}@${shadow_ip}" \
         "/usr/sbin/unifi-on-boot --skip-shadow" 2>&1 | tee -a "$LOG_FILE"; then
         log "Shadow gateway sync completed successfully"
     else
@@ -183,7 +191,8 @@ if [ "$fail_count" -gt 0 ]; then
     log "WARNING: ${fail_count} script(s) failed. Check log for details."
 fi
 
-# Sync to shadow gateway after all scripts have run
-sync_shadow_gateway || log "WARNING: Shadow gateway sync encountered errors"
+# Sync to shadow gateway in the background — not boot-critical
+(sync_shadow_gateway || log "WARNING: Shadow gateway sync encountered errors") &
+disown
 
 exit 0

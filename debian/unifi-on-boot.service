@@ -9,6 +9,7 @@ StartLimitBurst=3
 Type=oneshot
 ExecStart=/usr/sbin/unifi-on-boot
 RemainAfterExit=yes
+TimeoutStartSec=300
 KillMode=mixed
 KillSignal=SIGTERM
 TimeoutStopSec=10
